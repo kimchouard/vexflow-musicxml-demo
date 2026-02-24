@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { View, ScrollView } from 'react-native';
 import { Renderer, Stave, StaveNote, Voice, Formatter } from 'vexflow';
 import type { ParsedScore, ParsedMeasure } from '../parser/musicxml';
@@ -51,77 +51,105 @@ function layoutLines(
   return lines;
 }
 
+function renderScore(container: HTMLDivElement, score: ParsedScore, width: number) {
+  container.innerHTML = '';
+  if (score.measures.length === 0 || width < 50) return;
+
+  const lines = layoutLines(score.measures, width);
+  const totalHeight = lines.length * STAVE_HEIGHT + 20;
+
+  const renderer = new Renderer(container, Renderer.Backends.SVG);
+  renderer.resize(width, totalHeight);
+  const context = renderer.getContext();
+
+  lines.forEach((line, lineIdx) => {
+    const usableWidth = width - MARGIN * 2;
+    const totalIdeal = line.idealWidths.reduce((a, b) => a + b, 0);
+    const staveWidths = line.idealWidths.map((w) => (w / totalIdeal) * usableWidth);
+    const yOffset = lineIdx * STAVE_HEIGHT;
+
+    let x = MARGIN;
+    line.measures.forEach((measure, idx) => {
+      const staveWidth = staveWidths[idx];
+      const stave = new Stave(x, yOffset + STAVE_Y, staveWidth);
+
+      if (idx === 0 && lineIdx === 0) {
+        if (measure.clef) stave.addClef(measure.clef);
+        if (measure.keySignature && measure.keySignature !== 'C')
+          stave.addKeySignature(measure.keySignature);
+        if (measure.timeSignature) stave.addTimeSignature(measure.timeSignature);
+      } else if (idx === 0 && measure.clef) {
+        stave.addClef(measure.clef);
+      }
+
+      stave.setContext(context).draw();
+
+      if (measure.notes.length > 0) {
+        try {
+          const staveNotes = measure.notes.map(
+            (n) =>
+              new StaveNote({
+                clef: measure.clef || 'treble',
+                keys: n.keys,
+                duration: n.duration,
+              })
+          );
+
+          const timeParts = (measure.timeSignature || '4/4').split('/');
+          const numBeats = parseInt(timeParts[0], 10) || 4;
+          const beatValue = parseInt(timeParts[1], 10) || 4;
+
+          const voice = new Voice({ numBeats, beatValue });
+          voice.setStrict(false);
+          voice.addTickables(staveNotes);
+
+          const noteStartX = stave.getNoteStartX();
+          const noteEndX = stave.getNoteEndX();
+          const formatWidth = Math.max(noteEndX - noteStartX - 10, 50);
+          new Formatter().joinVoices([voice]).format([voice], formatWidth);
+          voice.draw(context, stave);
+        } catch (e) {
+          console.warn(`Error rendering measure ${idx}:`, e);
+        }
+      }
+
+      x += staveWidth;
+    });
+  });
+}
+
 export default function SheetMusicWeb({ score }: SheetMusicProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
 
+  // Use ResizeObserver to get the real width after layout
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || score.measures.length === 0) return;
-    container.innerHTML = '';
+    if (!container) return;
 
-    const width = container.clientWidth || 800;
-    const lines = layoutLines(score.measures, width);
-    const totalHeight = lines.length * STAVE_HEIGHT + 20;
-
-    const renderer = new Renderer(container, Renderer.Backends.SVG);
-    renderer.resize(width, totalHeight);
-    const context = renderer.getContext();
-
-    lines.forEach((line, lineIdx) => {
-      const usableWidth = width - MARGIN * 2;
-      const totalIdeal = line.idealWidths.reduce((a, b) => a + b, 0);
-      const staveWidths = line.idealWidths.map((w) => (w / totalIdeal) * usableWidth);
-      const yOffset = lineIdx * STAVE_HEIGHT;
-
-      let x = MARGIN;
-      line.measures.forEach((measure, idx) => {
-        const staveWidth = staveWidths[idx];
-        const stave = new Stave(x, yOffset + STAVE_Y, staveWidth);
-
-        if (idx === 0 && lineIdx === 0) {
-          if (measure.clef) stave.addClef(measure.clef);
-          if (measure.keySignature && measure.keySignature !== 'C')
-            stave.addKeySignature(measure.keySignature);
-          if (measure.timeSignature) stave.addTimeSignature(measure.timeSignature);
-        } else if (idx === 0 && measure.clef) {
-          stave.addClef(measure.clef);
-        }
-
-        stave.setContext(context).draw();
-
-        if (measure.notes.length > 0) {
-          try {
-            const staveNotes = measure.notes.map(
-              (n) =>
-                new StaveNote({
-                  clef: measure.clef || 'treble',
-                  keys: n.keys,
-                  duration: n.duration,
-                })
-            );
-
-            const timeParts = (measure.timeSignature || '4/4').split('/');
-            const numBeats = parseInt(timeParts[0], 10) || 4;
-            const beatValue = parseInt(timeParts[1], 10) || 4;
-
-            const voice = new Voice({ numBeats, beatValue });
-            voice.setStrict(false);
-            voice.addTickables(staveNotes);
-
-            const noteStartX = stave.getNoteStartX();
-            const noteEndX = stave.getNoteEndX();
-            const formatWidth = Math.max(noteEndX - noteStartX - 10, 50);
-            new Formatter().joinVoices([voice]).format([voice], formatWidth);
-            voice.draw(context, stave);
-          } catch (e) {
-            console.warn(`Error rendering measure ${idx}:`, e);
-          }
-        }
-
-        x += staveWidth;
-      });
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        const w = entry.contentRect.width;
+        if (w > 0) setContainerWidth(w);
+      }
     });
-  }, [score]);
+
+    observer.observe(container);
+
+    // Also check immediately in case it's already laid out
+    const w = container.clientWidth;
+    if (w > 0) setContainerWidth(w);
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Re-render when score or width changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || containerWidth < 50) return;
+    renderScore(container, score, containerWidth);
+  }, [score, containerWidth]);
 
   return (
     <ScrollView style={{ flex: 1 }}>
