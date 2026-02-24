@@ -1,6 +1,8 @@
 /**
  * Minimal MusicXML parser → VexFlow-friendly intermediate representation.
+ * Uses fast-xml-parser (works in both RN Hermes and web).
  */
+import { XMLParser } from 'fast-xml-parser';
 
 export interface ParsedNote {
   keys: string[];
@@ -33,42 +35,46 @@ const CLEF_MAP: Record<string, string> = {
   G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor',
 };
 
-function getTextContent(el: Element, tag: string): string | null {
-  const child = el.getElementsByTagName(tag)[0];
-  return child ? child.textContent?.trim() ?? null : null;
+function ensureArray<T>(val: T | T[] | undefined): T[] {
+  if (val === undefined || val === null) return [];
+  return Array.isArray(val) ? val : [val];
 }
 
 export function parseMusicXML(xmlString: string): ParsedScore {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlString, 'application/xml');
-  const measures: ParsedMeasure[] = [];
-  const measureEls = doc.getElementsByTagName('measure');
+  const parser = new XMLParser({
+    ignoreAttributes: true,
+    isArray: (name) => ['measure', 'note', 'part'].includes(name),
+  });
+  const doc = parser.parse(xmlString);
+  const parts = ensureArray(doc?.['score-partwise']?.part);
+  if (parts.length === 0) return { measures: [] };
 
+  const rawMeasures = ensureArray(parts[0].measure);
+  const measures: ParsedMeasure[] = [];
   let lastTimeSignature = '4/4';
   let lastClef = 'treble';
 
-  for (let i = 0; i < measureEls.length; i++) {
-    const measureEl = measureEls[i];
+  for (const m of rawMeasures) {
     const parsed: ParsedMeasure = { notes: [] };
 
-    const attrs = measureEl.getElementsByTagName('attributes')[0];
+    const attrs = m.attributes;
     if (attrs) {
-      const clefEl = attrs.getElementsByTagName('clef')[0];
-      if (clefEl) {
-        const sign = getTextContent(clefEl, 'sign') || 'G';
-        const line = getTextContent(clefEl, 'line') || '2';
+      const clefData = attrs.clef;
+      if (clefData) {
+        const sign = String(clefData.sign || 'G');
+        const line = String(clefData.line || '2');
         lastClef = CLEF_MAP[`${sign}${line}`] || 'treble';
         parsed.clef = lastClef;
       }
-      const keyEl = attrs.getElementsByTagName('key')[0];
-      if (keyEl) {
-        const fifths = getTextContent(keyEl, 'fifths') || '0';
+      const keyData = attrs.key;
+      if (keyData) {
+        const fifths = String(keyData.fifths ?? '0');
         parsed.keySignature = FIFTHS_TO_KEY[fifths] || 'C';
       }
-      const timeEl = attrs.getElementsByTagName('time')[0];
-      if (timeEl) {
-        const beats = getTextContent(timeEl, 'beats') || '4';
-        const beatType = getTextContent(timeEl, 'beat-type') || '4';
+      const timeData = attrs.time;
+      if (timeData) {
+        const beats = String(timeData.beats || '4');
+        const beatType = String(timeData['beat-type'] || '4');
         lastTimeSignature = `${beats}/${beatType}`;
         parsed.timeSignature = lastTimeSignature;
       }
@@ -77,27 +83,23 @@ export function parseMusicXML(xmlString: string): ParsedScore {
     if (!parsed.clef) parsed.clef = lastClef;
     if (!parsed.timeSignature) parsed.timeSignature = lastTimeSignature;
 
-    const noteEls = measureEl.getElementsByTagName('note');
-    for (let j = 0; j < noteEls.length; j++) {
-      const noteEl = noteEls[j];
-      if (noteEl.getElementsByTagName('chord').length > 0) continue;
-      const isRest = noteEl.getElementsByTagName('rest').length > 0;
-      const typeStr = getTextContent(noteEl, 'type') || 'quarter';
+    const notes = ensureArray(m.note);
+    for (const n of notes) {
+      if (n.chord !== undefined) continue;
+      const isRest = n.rest !== undefined;
+      const typeStr = String(n.type || 'quarter');
       const duration = TYPE_TO_DURATION[typeStr] || 'q';
 
       if (isRest) {
         parsed.notes.push({ keys: ['b/4'], duration: duration + 'r', isRest: true });
-      } else {
-        const pitchEl = noteEl.getElementsByTagName('pitch')[0];
-        if (pitchEl) {
-          const step = (getTextContent(pitchEl, 'step') || 'C').toLowerCase();
-          const octave = getTextContent(pitchEl, 'octave') || '4';
-          const alter = getTextContent(pitchEl, 'alter');
-          let accidental = '';
-          if (alter === '1') accidental = '#';
-          else if (alter === '-1') accidental = 'b';
-          parsed.notes.push({ keys: [`${step}${accidental}/${octave}`], duration });
-        }
+      } else if (n.pitch) {
+        const step = String(n.pitch.step || 'C').toLowerCase();
+        const octave = String(n.pitch.octave || '4');
+        const alter = n.pitch.alter;
+        let accidental = '';
+        if (String(alter) === '1') accidental = '#';
+        else if (String(alter) === '-1') accidental = 'b';
+        parsed.notes.push({ keys: [`${step}${accidental}/${octave}`], duration });
       }
     }
     measures.push(parsed);

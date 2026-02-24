@@ -10,11 +10,14 @@
   },
   "dependencies": {
     "@shopify/react-native-skia": "2.2.12",
+    "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.33",
     "expo-status-bar": "~3.0.9",
+    "fast-xml-parser": "^5.3.7",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-reanimated": "~4.1.1",
     "react-native-web": "^0.21.0",
     "vexflow": "^5.0.0",
     "vexflow-native": "^0.2.0"
