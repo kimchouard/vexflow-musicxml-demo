@@ -12,6 +12,8 @@
     "@shopify/react-native-skia": "2.2.12",
     "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.33",
+    "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.21",
     "expo-status-bar": "~3.0.9",
     "fast-xml-parser": "^5.3.7",
     "react": "19.1.0",
