@@ -19,7 +19,7 @@ const SAMPLES = [
 ];
 
 export default function App() {
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedIdx, setSelectedIdx] = useState(1); // Default to C Major Scale
 
   const score = useMemo(() => {
     try {
