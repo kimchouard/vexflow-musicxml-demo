@@ -17,11 +17,12 @@ interface SheetMusicProps {
  * More beats / more notes = wider measure. First measure of score gets extra for clef+key+time.
  */
 function measureIdealWidth(measure: ParsedMeasure, isFirstOfScore: boolean): number {
-  // Target ~4 measures per line on mobile (~375pt usable ~355pt)
-  // 4 beats × 20px = 80px base; first measure gets +40 for clef/time
+  // Target ~2 measures per line on mobile (~375pt usable ~355pt)
+  // 4 beats × 38px = 152px base; first measure gets +40 for clef/time
+  // 152+40 + 152 = 344 → fits 2 measures on first line
   const timeParts = (measure.timeSignature || '4/4').split('/');
   const numBeats = parseInt(timeParts[0], 10) || 4;
-  const baseWidth = numBeats * 20;
+  const baseWidth = numBeats * 38;
   const extra = isFirstOfScore ? 40 : 0;
   return baseWidth + extra;
 }
