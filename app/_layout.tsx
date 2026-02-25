@@ -49,6 +49,7 @@ export default function RootLayout() {
       <WithSkiaWeb
         getComponent={() => ({ default: AppLayout })}
         fallback={<LoadingFallback />}
+        opts={{ locateFile: (file: string) => `/${file}` }}
       />
     );
   }

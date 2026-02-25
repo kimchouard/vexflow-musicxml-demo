@@ -1,9 +1,58 @@
+diff --git a/node_modules/vexflow-native/lib/module/SkiaVexflowContext.js b/node_modules/vexflow-native/lib/module/SkiaVexflowContext.js
+index 7d72ba0..34b8a93 100644
+--- a/node_modules/vexflow-native/lib/module/SkiaVexflowContext.js
++++ b/node_modules/vexflow-native/lib/module/SkiaVexflowContext.js
+@@ -216,15 +216,22 @@ export default class SkiaVexflowContext {
+     notImplemented('add');
+   }
+   measureText(text) {
+-    const rect = this.textFont.measureText(text);
+     const width = getAdvanceWidth(this.textFont, text);
+-    const height = rect.height;
+-    return {
+-      x: rect.x,
+-      y: rect.y,
+-      width,
+-      height
+-    };
++    let x = 0, y = 0, height = 12;
++    try {
++      const rect = this.textFont.measureText(text);
++      x = rect.x;
++      y = rect.y;
++      height = rect.height;
++    } catch {
++      // measureText not available on web — use metrics instead
++      try {
++        const metrics = this.textFont.getMetrics();
++        y = metrics.ascent ?? -12;
++        height = Math.abs(metrics.ascent ?? 12) + Math.abs(metrics.descent ?? 4);
++      } catch {}
++    }
++    return { x, y, width, height };
+   }
+   set fillStyle(style) {
+     if (typeof style === 'string') {
 diff --git a/node_modules/vexflow-native/lib/module/utils.js b/node_modules/vexflow-native/lib/module/utils.js
-index ccd2076..1e4d9b2 100644
+index ccd2076..be79c84 100644
 --- a/node_modules/vexflow-native/lib/module/utils.js
 +++ b/node_modules/vexflow-native/lib/module/utils.js
-@@ -51,27 +51,39 @@ export function createFont(size, familyName, bravuraFont) {
-       return font;
+@@ -46,32 +46,47 @@ export function createFont(size, familyName, bravuraFont) {
+     if (cached) return cached;
+     const typeface = bravuraFont.getTypeface();
+     if (typeface) {
+-      const font = Skia.Font(typeface, fontSize);
+-      fontCache.set(cacheKey, font);
+-      return font;
++      try {
++        const font = Skia.Font(typeface, fontSize);
++        fontCache.set(cacheKey, font);
++        return font;
++      } catch {
++        // On web (CanvasKit WASM), Font.getTypeface() returns a raw pointer
++        // that can't be reused in new Font(). Return original font as fallback.
++        return bravuraFont;
++      }
      }
    }
 -  const fontMgr = Skia.FontMgr.System();
@@ -55,18 +104,66 @@ index ccd2076..1e4d9b2 100644
 +    // On web (CanvasKit WASM), system font APIs are not available.
 +    // Fall back to Bravura font if provided.
 +    if (bravuraFont) {
-+      const typeface = bravuraFont.getTypeface();
-+      if (typeface) {
-+        return Skia.Font(typeface, fontSize);
-+      }
++      return bravuraFont;
      }
    }
    throw new Error('Unable to create a Skia font.');
+diff --git a/node_modules/vexflow-native/src/SkiaVexflowContext.ts b/node_modules/vexflow-native/src/SkiaVexflowContext.ts
+index 69af71e..2660a96 100644
+--- a/node_modules/vexflow-native/src/SkiaVexflowContext.ts
++++ b/node_modules/vexflow-native/src/SkiaVexflowContext.ts
+@@ -365,16 +365,22 @@ export default class SkiaVexflowContext implements VexflowRenderContext {
+   }
+ 
+   measureText(text: string) {
+-    const rect = this.textFont.measureText(text);
+     const width = getAdvanceWidth(this.textFont, text);
+-    const height = rect.height;
+-
+-    return {
+-      x: rect.x,
+-      y: rect.y,
+-      width,
+-      height,
+-    };
++    let x = 0, y = 0, height = 12;
++    try {
++      const rect = this.textFont.measureText(text);
++      x = rect.x;
++      y = rect.y;
++      height = rect.height;
++    } catch {
++      // measureText not available on web (CanvasKit WASM) — use metrics
++      try {
++        const metrics = this.textFont.getMetrics();
++        y = metrics.ascent ?? -12;
++        height = Math.abs(metrics.ascent ?? 12) + Math.abs(metrics.descent ?? 4);
++      } catch {}
++    }
++    return { x, y, width, height };
+   }
+ 
+   set fillStyle(style: string | CanvasGradient | CanvasPattern) {
 diff --git a/node_modules/vexflow-native/src/utils.tsx b/node_modules/vexflow-native/src/utils.tsx
-index 71ee7f7..9bf4e10 100644
+index 71ee7f7..e646ee9 100644
 --- a/node_modules/vexflow-native/src/utils.tsx
 +++ b/node_modules/vexflow-native/src/utils.tsx
-@@ -70,37 +70,49 @@ export function createFont(
+@@ -64,43 +64,58 @@ export function createFont(
+ 
+     const typeface = bravuraFont.getTypeface();
+     if (typeface) {
+-      const font = Skia.Font(typeface, fontSize);
+-      fontCache.set(cacheKey, font);
+-      return font;
++      try {
++        const font = Skia.Font(typeface, fontSize);
++        fontCache.set(cacheKey, font);
++        return font;
++      } catch {
++        // On web (CanvasKit WASM), Font.getTypeface() returns a raw pointer
++        // that can't be reused in new Font(). Return original font as fallback.
++        return bravuraFont;
++      }
      }
    }
  
@@ -136,12 +233,9 @@ index 71ee7f7..9bf4e10 100644
 +    }
 +  } catch {
 +    // On web (CanvasKit WASM), system font APIs are not available.
-+    // Fall back to Bravura font if provided.
++    // Fall back to the Bravura font if provided.
 +    if (bravuraFont) {
-+      const typeface = bravuraFont.getTypeface();
-+      if (typeface) {
-+        return Skia.Font(typeface, fontSize);
-+      }
++      return bravuraFont;
      }
    }
  

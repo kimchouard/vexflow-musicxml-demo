@@ -1,8 +1,14 @@
 import React, { useCallback } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { ScrollView, View, Platform, useWindowDimensions } from 'react-native';
 import { Formatter, Stave, StaveNote, Voice } from 'vexflow';
-import { VexflowCanvas, type VexflowCanvasDrawArgs } from 'vexflow-native';
+import { VexflowCanvas as VexflowCanvasNative, type VexflowCanvasDrawArgs } from 'vexflow-native';
 import type { ParsedScore, ParsedMeasure } from '../parser/musicxml';
+
+// On web, use our custom canvas that retains Skia object references
+// to prevent CanvasKit WASM GC issues during Picture playback
+const VexflowCanvas = Platform.OS === 'web'
+  ? require('./VexflowCanvasWeb').default
+  : VexflowCanvasNative;
 
 const STAVE_HEIGHT = 150;
 const STAVE_Y_OFFSET = 40;
@@ -100,6 +106,7 @@ function SheetMusicLine({
 
   const onDraw = useCallback(
     ({ ctx }: VexflowCanvasDrawArgs) => {
+      try {
       const numMeasures = measures.length;
       if (numMeasures === 0) return;
 
@@ -163,6 +170,9 @@ function SheetMusicLine({
 
         x += staveWidth;
       });
+      } catch (e) {
+        console.error('[SheetMusic] onDraw crashed:', e);
+      }
     },
     [measures, idealWidths, isFirstLine, availableWidth]
   );

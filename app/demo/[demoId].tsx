@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import SheetMusic from '../../src/components/SheetMusic';
@@ -10,6 +10,35 @@ const DEMO_MAP: Record<string, { title: string; xml: string }> = {
   'c-major-scale': { title: '🎵 C Major Scale', xml: scaleXml },
   'ode-to-joy': { title: '🎶 Ode to Joy', xml: odeToJoyXml },
 };
+
+// Error boundary to catch rendering crashes
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('SheetMusic render error:', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorIcon}>💥</Text>
+          <Text style={styles.errorText}>Rendering crashed</Text>
+          <Text style={styles.errorDetail}>{this.state.error.message}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function DemoScreen() {
   const { demoId } = useLocalSearchParams<{ demoId: string }>();
@@ -40,7 +69,9 @@ export default function DemoScreen() {
     <>
       <Stack.Screen options={{ title: demo.title }} />
       <View style={styles.container}>
-        <SheetMusic score={score} />
+        <ErrorBoundary>
+          <SheetMusic score={score} />
+        </ErrorBoundary>
       </View>
     </>
   );
@@ -73,5 +104,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  errorDetail: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    fontFamily: 'monospace',
   },
 });
